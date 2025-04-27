@@ -12,10 +12,12 @@ import (
 	"github.com/miekg/dns"
 )
 
+var lastChoice = 0
+
 // adapted from https://gist.github.com/NinoM4ster/edaac29339371c6dde7cdb48776d2854 which was
 // adapted from https://gist.github.com/walm/0d67b4fb2d5daf3edd4fad3e13b162cb
 
-func newDNSHandler(records Records, aDelay, aaaaDelay time.Duration, authority string) dns.HandlerFunc {
+func newDNSHandler(records Records, aDelay, aaaaDelay time.Duration, authority string, alternateRecords bool) dns.HandlerFunc {
 	return func(w dns.ResponseWriter, r *dns.Msg) {
 		m := new(dns.Msg)
 		m.SetReply(r)
@@ -81,6 +83,14 @@ func newDNSHandler(records Records, aDelay, aaaaDelay time.Duration, authority s
 					}
 					m.Answer = append(m.Answer, rr)
 				}
+
+				if alternateRecords {
+					lastChoice++
+					if lastChoice >= len(m.Answer) {
+						lastChoice = 0
+					}
+					m.Answer = []dns.RR{m.Answer[lastChoice]}
+				}
 			}
 		}
 
@@ -111,6 +121,7 @@ func main() {
 	aaaaRecords := flag.StringSliceP("aaaa", "6", []string{}, "AAAA records to serve")
 	aDelay := flag.DurationP("delay-a", "d", 0, "delay before serving to A records - give an invalid IP address to prevent A records from being served with CNAMES")
 	aaaaDelay := flag.DurationP("delay-aaaa", "D", 0, "delay before serving to AAAA records - give an invalid IP address to prevent AAAA records from being served with CNAMES")
+	alternateRecords := flag.BoolP("alternate", "A", false, "Alternate records, useful for TOCTOU race conditions")
 	aCname := flag.StringSliceP("cname-a", "c", []string{}, "A record to serve for CNAME queries")
 	aaaaCname := flag.StringSliceP("cname-aaaa", "C", []string{}, "AAAA record to serve for CNAME queries")
 	authority := flag.StringP("authority", "", "", "authority to serve")
@@ -124,7 +135,7 @@ func main() {
 	}
 
 	// attach request handler func
-	dns.HandleFunc(".", newDNSHandler(records, *aDelay, *aaaaDelay, *authority))
+	dns.HandleFunc(".", newDNSHandler(records, *aDelay, *aaaaDelay, *authority, *alternateRecords))
 
 	// start server
 	server := &dns.Server{Addr: fmt.Sprintf("%s:%d", *listenAddr, *port), Net: "udp"}
