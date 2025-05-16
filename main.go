@@ -12,7 +12,7 @@ import (
 	"github.com/miekg/dns"
 )
 
-var lastChoice = 0
+var choiceMap = make(map[string]int)
 
 // adapted from https://gist.github.com/NinoM4ster/edaac29339371c6dde7cdb48776d2854 which was
 // adapted from https://gist.github.com/walm/0d67b4fb2d5daf3edd4fad3e13b162cb
@@ -85,11 +85,11 @@ func newDNSHandler(records Records, aDelay, aaaaDelay time.Duration, authority s
 				}
 
 				if alternateRecords {
-					lastChoice++
-					if lastChoice >= len(m.Answer) {
-						lastChoice = 0
+					if _, ok := choiceMap[q.Name]; !ok {
+						choiceMap[q.Name] = 0
 					}
-					m.Answer = []dns.RR{m.Answer[lastChoice]}
+					choiceMap[q.Name]++
+					m.Answer = []dns.RR{m.Answer[choiceMap[q.Name]%2]}
 				}
 			}
 		}
@@ -101,6 +101,10 @@ func newDNSHandler(records Records, aDelay, aaaaDelay time.Duration, authority s
 			}
 		}
 		m.Authoritative = true
+
+		for _, answer := range m.Answer {
+			log.Printf("resonding with: %s", answer.String())
+		}
 
 		w.WriteMsg(m)
 	}
